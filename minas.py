@@ -23,29 +23,50 @@ class Minas(BaseSKMObject, ClassifierMixin):
             self.cluster_algorithm = cluster_algorithm
 
         self.microclusters = []  # list of microclusters
+        self.before_offline_phase = True
+
+        self.short_mem = []
+        self.sleep_mem = []
 
     def fit(self, X, y, classes=None, sample_weight=None):
+        """fit means fitting in the OFFLINE phase"""
         self.microclusters = self.offline(X, y)
+        self.before_offline_phase = False
         return self
 
     def partial_fit(self, X, y, classes=None, sample_weight=None):
-        # TODO
-        self.fit(X, y)
+        if self.before_offline_phase:
+            self.fit(X, y)
+        else:
+            y_preds, cluster_preds = self.predict(X, ret_cluster=True)
+            timestamp = time()
+            # TODO: remove this ugly loop too
+            for point_x, y_pred, cluster in zip(X, y_preds, cluster_preds):
+                if y_pred != -1:  # the model can explain point_x
+                    self.update_cluster(cluster, point_x, y_pred, timestamp)
+                else:  # the model cannot explain point_x
+                    pass  # TODO
         return self
 
-    def predict(self, X):
+    def predict(self, X, ret_cluster=False):
         """X is an array"""
         # TODO: remove this ugly loop
-        predictions = []
+        pred_labels = []
+        pred_clusters = []
         for point in X:
             # find closest centroid
             closest_cluster = min(self.microclusters,
                                   key=lambda cl: cl.distance_to_centroid(point))
             if closest_cluster.is_inside(point):  # classify in this cluster
-                predictions.append(closest_cluster.label)
+                pred_labels.append(closest_cluster.label)
+                pred_clusters.append(closest_cluster)
             else:  # classify as unknown
-                predictions.append(0)
-        return np.asarray(predictions)
+                pred_labels.append(-1)
+                pred_clusters.append(None)
+        if ret_cluster:
+            return np.asarray(pred_labels), pred_clusters
+        else:
+            return np.asarray(pred_labels)
 
     def predict_proba(self, X):
         # TODO
@@ -75,6 +96,28 @@ class Minas(BaseSKMObject, ClassifierMixin):
 
         return microclusters
 
+    def update_cluster(self, cluster, X, y, timestamp):
+        """
+
+        Parameters
+        ----------
+        cluster :minas.MicroCluster
+        X :numpy.ndarray
+            X is one point.
+        y :numpy.int64
+
+        Returns
+        -------
+
+        """
+        assert len(X.shape) == 1  # it's just one point
+        cluster.n += 1
+        cluster.linear_sum = np.sum([cluster.linear_sum, X], axis=0)
+        cluster.squared_sum = np.sum([cluster.squared_sum, np.square(X)], axis=0)
+        cluster.timestamp = timestamp
+        cluster.instances = np.append(cluster.instances, [X], axis=0)  # TODO: remove later when dropping instances from class
+        cluster.update_properties()
+
 
 class MicroCluster(object):
 
@@ -92,8 +135,7 @@ class MicroCluster(object):
         self.squared_sum = np.square(instances).sum(axis=0)
         self.timestamp = timestamp
 
-        self.centroid = self.linear_sum / self.n
-        self.radius = self.get_radius()
+        self.update_properties()
 
     def __str__(self):
         return f"""
@@ -131,3 +173,15 @@ class MicroCluster(object):
         """Check if points in X are inside this microcluster.
         X is an array."""
         return np.less(self.distance_to_centroid(X), self.radius)
+
+    def update_properties(self):
+        """
+        Update centroid and radius based on current cluster properties.
+
+        Returns
+        -------
+        None
+
+        """
+        self.centroid = self.linear_sum / self.n
+        self.radius = self.get_radius()
