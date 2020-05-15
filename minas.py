@@ -11,7 +11,9 @@ class Minas(BaseSKMObject, ClassifierMixin):
     def __init__(self,
                  kini=3,
                  cluster_algorithm='kmeans',
-                 random_state=0):
+                 random_state=0,
+                 min_short_mem_trigger=100,
+                 min_examples_cluster=10):
         super().__init__()
         self.kini = kini
         self.random_state = random_state
@@ -27,6 +29,8 @@ class Minas(BaseSKMObject, ClassifierMixin):
 
         self.short_mem = []
         self.sleep_mem = []
+        self.min_short_mem_trigger = min_short_mem_trigger
+        self.min_examples_cluster = min_examples_cluster
 
     def fit(self, X, y, classes=None, sample_weight=None):
         """fit means fitting in the OFFLINE phase"""
@@ -45,7 +49,9 @@ class Minas(BaseSKMObject, ClassifierMixin):
                 if y_pred != -1:  # the model can explain point_x
                     self.update_cluster(cluster, point_x, y_pred, timestamp)
                 else:  # the model cannot explain point_x
-                    pass  # TODO
+                    self.short_mem.append(ShortMemInstance(point_x, timestamp))
+                    if len(self.short_mem) >= self.min_short_mem_trigger:
+                        self.novelty_detect()
         return self
 
     def predict(self, X, ret_cluster=False):
@@ -115,8 +121,50 @@ class Minas(BaseSKMObject, ClassifierMixin):
         cluster.linear_sum = np.sum([cluster.linear_sum, X], axis=0)
         cluster.squared_sum = np.sum([cluster.squared_sum, np.square(X)], axis=0)
         cluster.timestamp = timestamp
-        cluster.instances = np.append(cluster.instances, [X], axis=0)  # TODO: remove later when dropping instances from class
+        cluster.instances = np.append(cluster.instances, [X],
+                                      axis=0)  # TODO: remove later when dropping instances from class
         cluster.update_properties()
+
+    def novelty_detect(self):
+        possible_clusters = []
+        X = np.array([instance.point for instance in self.short_mem])
+        if self.cluster_algorithm == 'kmeans':
+            cluster_clf = KMeans(n_clusters=self.kini,
+                                 random_state=self.random_state)
+            cluster_clf.fit(X)
+            for cluster_label in np.unique(cluster_clf.labels_):
+                cluster_instances = X[cluster_clf.labels_ == cluster_label]
+                possible_clusters.append(
+                    MicroCluster(-1, cluster_instances, 0))  # TODO: check later, is timestamp important here?
+            for cluster in possible_clusters:
+                if cluster.is_cohesive(self.microclusters) and cluster.is_representative(self.min_examples_cluster):
+                    closest_cluster = cluster.find_closest_cluster(self.microclusters)
+                    closest_distance = cluster.distance_to_centroid(closest_cluster.centroid)
+
+                    threshold = self.best_threshold(closest_cluster)
+
+                    if closest_distance < threshold:  # the new microcluster is an extension
+                        cluster.label = closest_cluster.label
+                    else:  # the new microcluster is a novelty pattern
+                        cluster.label = max([cluster.label for cluster in self.microclusters]) + 1
+
+                    # add the new cluster to the model
+                    self.microclusters.append(cluster)
+
+                    # remove these examples from short term memory
+                    for instance in cluster.instances:
+                        self.short_mem.remove(instance)
+                else:
+                    # keep these examples in short term memory
+                    pass
+
+    @staticmethod
+    def best_threshold(cluster, strategy=1):
+        # TODO implement other strategies according to paper
+        # factor = 1.1
+        factor = 3
+        if strategy == 1:
+            return factor * np.std(cluster.distance_to_centroid(cluster.instances))
 
 
 class MicroCluster(object):
@@ -138,14 +186,13 @@ class MicroCluster(object):
         self.update_properties()
 
     def __str__(self):
-        return f"""
-        Microcluster for target class {self.label}
-        Number of instances: {self.n}
-        Linear sum: {self.linear_sum}
-        Squared sum: {self.squared_sum}
-        Centroid: {self.centroid}
-        Radius: {self.radius}
-        Timestamp of last change: {self.timestamp}"""
+        return f"""Target class {self.label}
+# of instances: {self.n}
+Linear sum: {self.linear_sum}
+Squared sum: {self.squared_sum}
+Centroid: {self.centroid}
+Radius: {self.radius}
+Timestamp of last change: {self.timestamp}"""
 
     def get_radius(self):
         """Return radius of the subcluster"""
@@ -163,7 +210,12 @@ class MicroCluster(object):
         # return factor*np.std(self.distance_to_centroid(self.instances))
 
     def distance_to_centroid(self, X):
-        """X is a numpy array of instances"""
+        """Returns distance from X to centroid of this cluster.
+
+        Parameters
+        ----------
+        X : numpy.ndarray
+        """
         if len(X.shape) == 1:  # X is only one point
             return np.linalg.norm(X - self.centroid)
         else:  # X contains several points
@@ -171,8 +223,29 @@ class MicroCluster(object):
 
     def is_inside(self, X):
         """Check if points in X are inside this microcluster.
-        X is an array."""
+
+        Parameters
+        ----------
+        X : numpy.ndarray
+
+        Returns
+        -------
+        numpy.bool_"""
         return np.less(self.distance_to_centroid(X), self.radius)
+
+    def find_closest_cluster(self, clusters):
+        """Finds closest cluster to this one among passed clusters.
+
+        Parameters
+        ----------
+        clusters : List[minas.MicroCluster]
+
+        Returns
+        -------
+        minas.MicroCluster
+
+        """
+        return min(clusters, key=lambda cl: cl.distance_to_centroid(self.centroid))
 
     def update_properties(self):
         """
@@ -185,3 +258,55 @@ class MicroCluster(object):
         """
         self.centroid = self.linear_sum / self.n
         self.radius = self.get_radius()
+
+    def is_cohesive(self, clusters):
+        """Verifies if this cluster is cohesive for novelty detection purposes.
+
+        A new micro-cluster is cohesive if its silhouette coefficient is larger than 0.
+        b represents the Euclidean distance between the centroid of the new micro-cluster and the centroid of its
+        closest micro-cluster, and a represents the standard deviation of the distances between the examples of the
+        new micro-cluster and the centroid of the new micro-cluster.
+
+        Parameters
+        ----------
+        clusters : List[minas.MicroCluster]
+
+        Returns
+        -------
+
+        """
+        b = self.distance_to_centroid(self.find_closest_cluster(clusters).centroid)
+        a = np.std(self.distance_to_centroid(self.instances))
+        silhouette = (b - a) / max(a, b)  # hm, this is always positive if b > a
+        return silhouette > 0
+
+    def is_representative(self, min_examples):
+        """Verifies if this cluster is representative for novelty detection purposes.
+
+        A new micro-cluster is representative if it contains a minimal number of examples,
+        where this number is a user-defined parameter.
+
+        Parameters
+        ----------
+        min_examples : int
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.n >= min_examples
+
+
+class ShortMemInstance:
+    def __init__(self, point, timestamp):
+        self.point = point
+        self.timestamp = timestamp
+
+    def __eq__(self, other):
+        """
+        I'm considering elements equal if they have the same values for all variables.
+        This currently does not consider the timestamp.
+        """
+        if type(other) == np.ndarray:
+            return np.all(self.point == other)
