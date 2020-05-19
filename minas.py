@@ -13,7 +13,8 @@ class Minas(BaseSKMObject, ClassifierMixin):
                  cluster_algorithm='kmeans',
                  random_state=0,
                  min_short_mem_trigger=100,
-                 min_examples_cluster=10):
+                 min_examples_cluster=10,
+                 update_summary=False):
         super().__init__()
         self.kini = kini
         self.random_state = random_state
@@ -31,6 +32,7 @@ class Minas(BaseSKMObject, ClassifierMixin):
         self.sleep_mem = []
         self.min_short_mem_trigger = min_short_mem_trigger
         self.min_examples_cluster = min_examples_cluster
+        self.update_summary = update_summary
 
     def fit(self, X, y, classes=None, sample_weight=None):
         """fit means fitting in the OFFLINE phase"""
@@ -47,7 +49,7 @@ class Minas(BaseSKMObject, ClassifierMixin):
             # TODO: remove this ugly loop too
             for point_x, y_pred, cluster in zip(X, y_preds, cluster_preds):
                 if y_pred != -1:  # the model can explain point_x
-                    self.update_cluster(cluster, point_x, y_pred, timestamp)
+                    cluster.update_cluster(point_x, y_pred, timestamp, self.update_summary)
                 else:  # the model cannot explain point_x
                     self.short_mem.append(ShortMemInstance(point_x, timestamp))
                     if len(self.short_mem) >= self.min_short_mem_trigger:
@@ -101,29 +103,6 @@ class Minas(BaseSKMObject, ClassifierMixin):
                     )
 
         return microclusters
-
-    def update_cluster(self, cluster, X, y, timestamp):
-        """
-
-        Parameters
-        ----------
-        cluster :minas.MicroCluster
-        X :numpy.ndarray
-            X is one point.
-        y :numpy.int64
-
-        Returns
-        -------
-
-        """
-        assert len(X.shape) == 1  # it's just one point
-        cluster.n += 1
-        cluster.linear_sum = np.sum([cluster.linear_sum, X], axis=0)
-        cluster.squared_sum = np.sum([cluster.squared_sum, np.square(X)], axis=0)
-        cluster.timestamp = timestamp
-        cluster.instances = np.append(cluster.instances, [X],
-                                      axis=0)  # TODO: remove later when dropping instances from class
-        cluster.update_properties()
 
     def novelty_detect(self):
         possible_clusters = []
@@ -246,6 +225,30 @@ Timestamp of last change: {self.timestamp}"""
 
         """
         return min(clusters, key=lambda cl: cl.distance_to_centroid(self.centroid))
+
+    def update_cluster(self, X, y, timestamp, update_summary):
+        """
+
+        Parameters
+        ----------
+        self : minas.MicroCluster
+        X : numpy.ndarray
+            X is one point.
+        y : numpy.int64
+
+        Returns
+        -------
+
+        """
+        assert len(X.shape) == 1  # it's just one point
+        self.timestamp = timestamp
+        self.instances = np.append(self.instances, [X],
+                                   axis=0)  # TODO: remove later when dropping instances from class
+        if update_summary:
+            self.n += 1
+            self.linear_sum = np.sum([self.linear_sum, X], axis=0)
+            self.squared_sum = np.sum([self.squared_sum, np.square(X)], axis=0)
+            self.update_properties()
 
     def update_properties(self):
         """
