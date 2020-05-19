@@ -1,6 +1,10 @@
 import numpy as np
 from time import time
 
+import pandas as pd
+from matplotlib import pyplot as plt
+# from celluloid import Camera
+
 from skmultiflow.core import BaseSKMObject, ClassifierMixin
 
 from sklearn.cluster import KMeans
@@ -32,6 +36,11 @@ class Minas(BaseSKMObject, ClassifierMixin):
         self.min_short_mem_trigger = min_short_mem_trigger
         self.min_examples_cluster = min_examples_cluster
 
+        # TODO use Camera
+        # self.fig = plt.figure()
+        # self.camera = Camera(self.fig)
+        self.animation_frame_num = 0
+
     def fit(self, X, y, classes=None, sample_weight=None):
         """fit means fitting in the OFFLINE phase"""
         self.microclusters = self.offline(X, y)
@@ -52,6 +61,9 @@ class Minas(BaseSKMObject, ClassifierMixin):
                     self.short_mem.append(ShortMemInstance(point_x, timestamp))
                     if len(self.short_mem) >= self.min_short_mem_trigger:
                         self.novelty_detect()
+
+        self.plot_clusters()
+
         return self
 
     def predict(self, X, ret_cluster=False):
@@ -167,11 +179,7 @@ class Minas(BaseSKMObject, ClassifierMixin):
             return factor * np.std(cluster.distance_to_centroid(cluster.instances))
 
     def plot_clusters(self):
-    def plot_clusters(self):
         """Simplistic plotting, assumes elements in cluster have two dimensions"""
-        import pandas as pd
-        from matplotlib import pyplot as plt
-
         points = pd.DataFrame(columns=['x', 'y', 'label'])
         centroids = pd.DataFrame(columns=['centroid', 'radius'])
         for cluster in self.microclusters:
@@ -183,14 +191,24 @@ class Minas(BaseSKMObject, ClassifierMixin):
                                                   'y': point[1],
                                                   'label': cluster.label}),  # TODO turn into int
                                        ignore_index=True)
+
         points.plot.scatter('x', 'y', c='label', colormap='gist_rainbow')
+        plt.gca().set_aspect('equal', adjustable='box')  # equal scale for both axes
         circles = []
         for centroid, radius in centroids.values:
             circles.append(plt.Circle((centroid[0], centroid[1]), radius, color='b', alpha=0.1))
         for circle in circles:
             plt.gcf().gca().add_artist(circle)
-        plt.savefig('clusters.png')
+        # self.camera.snap()
+        plt.savefig(f'animation/clusters_{self.animation_frame_num:05}.png', dpi=300)
+        plt.close()
+        self.animation_frame_num += 1
 
+    def plot_animation(self):
+        pass
+        # TODO
+        # animation = self.camera.animate()
+        # animation.save('animation.mp4')
 
 class MicroCluster(object):
 
