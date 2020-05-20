@@ -159,7 +159,10 @@ class MicroCluster(object):
         self.instances = instances
         self.n = len(instances)
         self.linear_sum = instances.sum(axis=0)
-        self.squared_sum = np.square(instances).sum(axis=0)
+        self.centroid = self.linear_sum / self.n
+        # Sum of the squared l2 norms of all samples belonging to a microcluster:
+        self.squared_sum = np.square(np.linalg.norm(self.instances, axis=1)).sum()
+        # self.squared_sum = np.square(instances).sum(axis=0)  # From CluSTREAM paper
         self.timestamp = timestamp
 
         self.update_properties()
@@ -175,14 +178,9 @@ Timestamp of last change: {self.timestamp}"""
 
     def get_radius(self):
         """Return radius of the subcluster"""
-        # from sklearn:
-        # dot_product = -2 * np.dot(self.linear_sum, self.centroid)
-        # return np.sqrt(
-        #   ((self.squared_sum + dot_product) / self.n) + self.squared_sum
-        # )
-        # from BIRCH paper:
+        # from BIRCH Wikipedia:
         return np.sqrt(
-            np.square(self.distance_to_centroid(self.instances)).sum() / self.n
+            (self.squared_sum / self.n) - np.dot(self.centroid, self.centroid)
         )
         # from MINAS paper:
         # factor = 1.1
