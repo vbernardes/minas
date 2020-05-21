@@ -19,7 +19,8 @@ class Minas(BaseSKMObject, ClassifierMixin):
                  min_short_mem_trigger=10,
                  min_examples_cluster=10,
                  threshold_strategy=1,
-                 update_summary=False):
+                 update_summary=False,
+                 animation=False):
         super().__init__()
         self.kini = kini
         self.random_state = random_state
@@ -39,11 +40,13 @@ class Minas(BaseSKMObject, ClassifierMixin):
         self.min_examples_cluster = min_examples_cluster
         self.threshold_strategy = threshold_strategy
         self.update_summary = update_summary
+        self.animation = animation
 
-        # TODO use Camera
-        # self.fig = plt.figure()
-        # self.camera = Camera(self.fig)
-        self.animation_frame_num = 0
+        if self.animation:
+            # TODO use Camera
+            # self.fig = plt.figure()
+            # self.camera = Camera(self.fig)
+            self.animation_frame_num = 0
 
     def fit(self, X, y, classes=None, sample_weight=None):
         """fit means fitting in the OFFLINE phase"""
@@ -65,8 +68,8 @@ class Minas(BaseSKMObject, ClassifierMixin):
                     self.short_mem.append(ShortMemInstance(point_x, timestamp))
                     if len(self.short_mem) >= self.min_short_mem_trigger:
                         self.novelty_detect()
-
-        self.plot_clusters()
+            if self.animation:
+                self.plot_clusters()
 
         return self
 
@@ -175,7 +178,7 @@ class Minas(BaseSKMObject, ClassifierMixin):
 
     def plot_clusters(self):
         """Simplistic plotting, assumes elements in cluster have two dimensions"""
-        points = pd.DataFrame(columns=['x', 'y', 'label'])
+        points = pd.DataFrame(columns=['x', 'y', 'pred_label'])
         cluster_info = pd.DataFrame(columns=['label', 'centroid', 'radius'])
         for cluster in self.microclusters:
             cluster_info = cluster_info.append(pd.Series({'label': cluster.label,
@@ -186,13 +189,13 @@ class Minas(BaseSKMObject, ClassifierMixin):
             for point in cluster.instances:
                 points = points.append(pd.Series({'x': point[0],
                                                   'y': point[1],
-                                                  'label': cluster.label}),
+                                                  'pred_label': cluster.label}),
                                        ignore_index=True)
         # add points from short term memory
         for mem_instance in self.short_mem:
             points = points.append(pd.Series({'x': mem_instance.point[0],
                                               'y': mem_instance.point[1],
-                                              'label': -1}),
+                                              'pred_label': -1}),
                                    ignore_index=True)
 
         color_names = ['k', 'tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple',
@@ -200,7 +203,7 @@ class Minas(BaseSKMObject, ClassifierMixin):
         assert len(cluster_info.label.unique()) <= len(color_names)  # limited to these colors for now
         # colormap to be indexed by label id
         colormap = pd.DataFrame({'name': color_names}, index=range(-1, len(color_names) - 1))
-        mapped_label_colors = colormap.loc[points['label']].values[:, 0]
+        mapped_label_colors = colormap.loc[points['pred_label']].values[:, 0]
         plt.scatter(points['x'], points['y'], c=mapped_label_colors, s=10, alpha=0.3)
         plt.gca().set_aspect('equal', adjustable='box')  # equal scale for both axes
 
@@ -212,7 +215,7 @@ class Minas(BaseSKMObject, ClassifierMixin):
             plt.gcf().gca().add_artist(circle)
 
         # self.camera.snap()
-        plt.savefig(f'animation/clusters_{self.animation_frame_num:05}.png', dpi=100)
+        plt.savefig(f'animation/clusters_{self.animation_frame_num:05}.png', dpi=300)
         plt.close()
         self.animation_frame_num += 1
 
