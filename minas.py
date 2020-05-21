@@ -19,6 +19,7 @@ class Minas(BaseSKMObject, ClassifierMixin):
                  min_short_mem_trigger=10,
                  min_examples_cluster=10,
                  threshold_strategy=1,
+                 threshold_factor=1.1,
                  update_summary=False,
                  animation=False):
         super().__init__()
@@ -39,6 +40,7 @@ class Minas(BaseSKMObject, ClassifierMixin):
         self.min_short_mem_trigger = min_short_mem_trigger
         self.min_examples_cluster = min_examples_cluster
         self.threshold_strategy = threshold_strategy
+        self.threshold_factor = threshold_factor
         self.update_summary = update_summary
         self.animation = animation
 
@@ -137,7 +139,8 @@ class Minas(BaseSKMObject, ClassifierMixin):
                     closest_cluster = cluster.find_closest_cluster(self.microclusters)
                     closest_distance = cluster.distance_to_centroid(closest_cluster.centroid)
 
-                    threshold = self.best_threshold(cluster, closest_cluster, self.threshold_strategy)
+                    threshold = self.best_threshold(cluster, closest_cluster,
+                                                    self.threshold_strategy, self.threshold_factor)
 
                     if closest_distance < threshold:  # the new microcluster is an extension
                         cluster.label = closest_cluster.label
@@ -151,17 +154,17 @@ class Minas(BaseSKMObject, ClassifierMixin):
                     for instance in cluster.instances:
                         self.short_mem.remove(instance)
 
-    def best_threshold(self, new_cluster, closest_cluster, strategy):
+    def best_threshold(self, new_cluster, closest_cluster, strategy, factor):
         def run_strategy_1():
-            # factor_1 = 1.1
-            factor_1 = 5
+            factor_1 = factor
+            # factor_1 = 5  # good for artificial, separated data sets
             return factor_1 * np.std(closest_cluster.distance_to_centroid(closest_cluster.instances))
 
         if strategy == 1:
             return run_strategy_1()
         else:
-            # factor_2 = factor_3 = 1.1
-            factor_2 = factor_3 = 1.2
+            # factor_2 = factor_3 = 1.2 # good for artificial, separated data sets
+            factor_2 = factor_3 = factor
             clusters_same_class = self.get_clusters_in_class(closest_cluster.label)
             if len(clusters_same_class) == 1:
                 return run_strategy_1()
