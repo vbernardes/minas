@@ -1,6 +1,10 @@
 import numpy as np
 from time import time
 
+import pandas as pd
+from matplotlib import pyplot as plt
+# from celluloid import Camera
+
 from skmultiflow.core import BaseSKMObject, ClassifierMixin
 
 from sklearn.cluster import KMeans
@@ -12,7 +16,7 @@ class Minas(BaseSKMObject, ClassifierMixin):
                  kini=3,
                  cluster_algorithm='kmeans',
                  random_state=0,
-                 min_short_mem_trigger=100,
+                 min_short_mem_trigger=10,
                  min_examples_cluster=10,
                  update_summary=False):
         super().__init__()
@@ -34,6 +38,11 @@ class Minas(BaseSKMObject, ClassifierMixin):
         self.min_examples_cluster = min_examples_cluster
         self.update_summary = update_summary
 
+        # TODO use Camera
+        # self.fig = plt.figure()
+        # self.camera = Camera(self.fig)
+        self.animation_frame_num = 0
+
     def fit(self, X, y, classes=None, sample_weight=None):
         """fit means fitting in the OFFLINE phase"""
         self.microclusters = self.offline(X, y)
@@ -54,6 +63,9 @@ class Minas(BaseSKMObject, ClassifierMixin):
                     self.short_mem.append(ShortMemInstance(point_x, timestamp))
                     if len(self.short_mem) >= self.min_short_mem_trigger:
                         self.novelty_detect()
+
+        self.plot_clusters()
+
         return self
 
     def predict(self, X, ret_cluster=False):
@@ -141,6 +153,55 @@ class Minas(BaseSKMObject, ClassifierMixin):
         factor = 3
         if strategy == 1:
             return factor * np.std(cluster.distance_to_centroid(cluster.instances))
+
+    def plot_clusters(self):
+        """Simplistic plotting, assumes elements in cluster have two dimensions"""
+        points = pd.DataFrame(columns=['x', 'y', 'label'])
+        cluster_info = pd.DataFrame(columns=['label', 'centroid', 'radius'])
+        for cluster in self.microclusters:
+            cluster_info = cluster_info.append(pd.Series({'label': cluster.label,
+                                                          'centroid': cluster.centroid,
+                                                          'radius': cluster.radius}),
+                                               ignore_index=True)
+            # add points from cluster
+            for point in cluster.instances:
+                points = points.append(pd.Series({'x': point[0],
+                                                  'y': point[1],
+                                                  'label': cluster.label}),
+                                       ignore_index=True)
+        # add points from short term memory
+        for mem_instance in self.short_mem:
+            points = points.append(pd.Series({'x': mem_instance.point[0],
+                                              'y': mem_instance.point[1],
+                                              'label': -1}),
+                                   ignore_index=True)
+
+        color_names = ['k', 'tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple',
+                       'tab:brown', 'tab:pink', 'tab:gray', 'tab:olive', 'tab:cyan']
+        assert len(cluster_info.label.unique()) <= len(color_names)  # limited to these colors for now
+        # colormap to be indexed by label id
+        colormap = pd.DataFrame({'name': color_names}, index=range(-1, len(color_names) - 1))
+        mapped_label_colors = colormap.loc[points['label']].values[:, 0]
+        plt.scatter(points['x'], points['y'], c=mapped_label_colors, s=10, alpha=0.3)
+        plt.gca().set_aspect('equal', adjustable='box')  # equal scale for both axes
+
+        circles = []
+        for label, centroid, radius in cluster_info.values:
+            circles.append(plt.Circle((centroid[0], centroid[1]), radius,
+                                      color=colormap.loc[label].values[0], alpha=0.1))
+        for circle in circles:
+            plt.gcf().gca().add_artist(circle)
+
+        # self.camera.snap()
+        plt.savefig(f'animation/clusters_{self.animation_frame_num:05}.png', dpi=100)
+        plt.close()
+        self.animation_frame_num += 1
+
+    def plot_animation(self):
+        pass
+        # TODO
+        # animation = self.camera.animate()
+        # animation.save('animation.mp4')
 
 
 class MicroCluster(object):
