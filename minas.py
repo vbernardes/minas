@@ -154,7 +154,7 @@ class Minas(BaseSKMObject, ClassifierMixin):
     def best_threshold(self, new_cluster, closest_cluster, strategy):
         def run_strategy_1():
             # factor_1 = 1.1
-            factor_1 = 3
+            factor_1 = 5
             return factor_1 * np.std(closest_cluster.distance_to_centroid(closest_cluster.instances))
 
         if strategy == 1:
