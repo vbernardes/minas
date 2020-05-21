@@ -228,6 +228,37 @@ class Minas(BaseSKMObject, ClassifierMixin):
         # animation = self.camera.animate()
         # animation.save('animation.mp4')
 
+    def confusion_matrix(self, X_test=None, y_test=None):
+        """Creates a confusion matrix.
+
+        It must be run on a fitted classifier that has already seen the examples in the test set.
+
+        Parameters
+        ----------
+        X_test : numpy.ndarray
+            The set of data samples to predict the class labels for.
+        y_test : numpy.ndarray
+            The set of class labels for the data samples.
+
+        Returns
+        -------
+        pandas.core.frame.DataFrame
+
+        """
+        # Init confusion matrix
+        y_test_classes = np.unique(y_test)  # rows
+        detected_classes = np.unique([cluster.label for cluster in self.microclusters])  # columns
+        conf_matrix = pd.DataFrame(np.zeros((len(y_test_classes), len(detected_classes) + 1), dtype=np.int32))
+        conf_matrix.index = y_test_classes
+        conf_matrix.rename(columns={len(detected_classes): -1}, inplace=True)  # last column is for unknown class
+
+        y_preds = self.predict(X_test)
+
+        for y_true, y_pred in zip(y_test, y_preds):
+            conf_matrix.loc[y_true, y_pred] += 1
+
+        return conf_matrix
+
 
 class MicroCluster(object):
 
