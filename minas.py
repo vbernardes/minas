@@ -16,7 +16,7 @@ class Minas(BaseSKMObject, ClassifierMixin):
                  kini=3,
                  cluster_algorithm='kmeans',
                  random_state=0,
-                 min_short_mem_trigger=50,
+                 min_short_mem_trigger=10,
                  min_examples_cluster=10):
         super().__init__()
         self.kini = kini
@@ -187,11 +187,18 @@ class Minas(BaseSKMObject, ClassifierMixin):
                                                           'centroid': cluster.centroid,
                                                           'radius': cluster.radius}),
                                                ignore_index=True)
+            # add points from cluster
             for point in cluster.instances:
                 points = points.append(pd.Series({'x': point[0],
                                                   'y': point[1],
-                                                  'label': cluster.label}),  # TODO turn into int
+                                                  'label': cluster.label}),
                                        ignore_index=True)
+        # add points from short term memory
+        for mem_instance in self.short_mem:
+            points = points.append(pd.Series({'x': mem_instance.point[0],
+                                              'y': mem_instance.point[1],
+                                              'label': -1}),
+                                   ignore_index=True)
 
         color_names = ['k', 'tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple',
                        'tab:brown', 'tab:pink', 'tab:gray', 'tab:olive', 'tab:cyan']
@@ -210,7 +217,7 @@ class Minas(BaseSKMObject, ClassifierMixin):
             plt.gcf().gca().add_artist(circle)
 
         # self.camera.snap()
-        plt.savefig(f'animation/clusters_{self.animation_frame_num:05}.png', dpi=300)
+        plt.savefig(f'animation/clusters_{self.animation_frame_num:05}.png', dpi=100)
         plt.close()
         self.animation_frame_num += 1
 
