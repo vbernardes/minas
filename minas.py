@@ -82,7 +82,7 @@ class Minas(BaseSKMObject, ClassifierMixin):
             # find closest centroid
             closest_cluster = min(self.microclusters,
                                   key=lambda cl: cl.distance_to_centroid(point))
-            if closest_cluster.is_inside(point):  # classify in this cluster
+            if closest_cluster.encompasses(point):  # classify in this cluster
                 pred_labels.append(closest_cluster.label)
                 pred_clusters.append(closest_cluster)
             else:  # classify as unknown
@@ -280,7 +280,7 @@ Timestamp of last change: {self.timestamp}"""
         else:  # X contains several points
             return np.linalg.norm(X - self.centroid, axis=1)
 
-    def is_inside(self, X):
+    def encompasses(self, X):
         """Check if points in X are inside this microcluster.
 
         Parameters
