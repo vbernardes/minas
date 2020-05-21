@@ -258,14 +258,14 @@ Timestamp of last change: {self.timestamp}"""
 
     def get_radius(self):
         """Return radius of the subcluster"""
+        factor = 1.5
         # from BIRCH Wikipedia
         diff = (self.squared_sum / self.n) - np.dot(self.centroid, self.centroid)
         if diff > 1e-15:
-            return np.sqrt(diff)
+            return factor * np.sqrt(diff)
         else:  # in this case diff should be zero, but sometimes it's an infinitesimal difference
             return 0
         # from MINAS paper:
-        # factor = 1.1
         # return factor*np.std(self.distance_to_centroid(self.instances))
 
     def distance_to_centroid(self, X):
