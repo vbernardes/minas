@@ -18,6 +18,7 @@ class Minas(BaseSKMObject, ClassifierMixin):
                  random_state=0,
                  min_short_mem_trigger=10,
                  min_examples_cluster=10,
+                 threshold_strategy=1,
                  update_summary=False):
         super().__init__()
         self.kini = kini
@@ -36,6 +37,7 @@ class Minas(BaseSKMObject, ClassifierMixin):
         self.sleep_mem = []
         self.min_short_mem_trigger = min_short_mem_trigger
         self.min_examples_cluster = min_examples_cluster
+        self.threshold_strategy = threshold_strategy
         self.update_summary = update_summary
 
         # TODO use Camera
@@ -132,7 +134,7 @@ class Minas(BaseSKMObject, ClassifierMixin):
                     closest_cluster = cluster.find_closest_cluster(self.microclusters)
                     closest_distance = cluster.distance_to_centroid(closest_cluster.centroid)
 
-                    threshold = self.best_threshold(closest_cluster)
+                    threshold = self.best_threshold(cluster, closest_cluster, self.threshold_strategy)
 
                     if closest_distance < threshold:  # the new microcluster is an extension
                         cluster.label = closest_cluster.label
@@ -146,13 +148,30 @@ class Minas(BaseSKMObject, ClassifierMixin):
                     for instance in cluster.instances:
                         self.short_mem.remove(instance)
 
-    @staticmethod
-    def best_threshold(cluster, strategy=1):
-        # TODO implement other strategies according to paper
-        # factor = 1.1
-        factor = 3
+    def best_threshold(self, new_cluster, closest_cluster, strategy):
+        def run_strategy_1():
+            # factor_1 = 1.1
+            factor_1 = 3
+            return factor_1 * np.std(closest_cluster.distance_to_centroid(closest_cluster.instances))
+
         if strategy == 1:
-            return factor * np.std(cluster.distance_to_centroid(cluster.instances))
+            return run_strategy_1()
+        else:
+            # factor_2 = factor_3 = 1.1
+            factor_2 = factor_3 = 1.2
+            clusters_same_class = self.get_clusters_in_class(closest_cluster.label)
+            if len(clusters_same_class) == 1:
+                return run_strategy_1()
+            else:
+                class_centroids = np.array([cluster.centroid for cluster in clusters_same_class])
+                distances = closest_cluster.distance_to_centroid(class_centroids)
+                if strategy == 2:
+                    return factor_2 * np.max(distances)
+                elif strategy == 3:
+                    return factor_3 * np.mean(distances)
+
+    def get_clusters_in_class(self, label):
+        return [cluster for cluster in self.microclusters if cluster.label == label]
 
     def plot_clusters(self):
         """Simplistic plotting, assumes elements in cluster have two dimensions"""
