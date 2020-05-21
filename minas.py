@@ -133,9 +133,6 @@ class Minas(BaseSKMObject, ClassifierMixin):
                     # remove these examples from short term memory
                     for instance in cluster.instances:
                         self.short_mem.remove(instance)
-                else:
-                    # keep these examples in short term memory
-                    pass
 
     @staticmethod
     def best_threshold(cluster, strategy=1):
@@ -178,10 +175,12 @@ Timestamp of last change: {self.timestamp}"""
 
     def get_radius(self):
         """Return radius of the subcluster"""
-        # from BIRCH Wikipedia:
-        return np.sqrt(
-            (self.squared_sum / self.n) - np.dot(self.centroid, self.centroid)
-        )
+        # from BIRCH Wikipedia
+        diff = (self.squared_sum / self.n) - np.dot(self.centroid, self.centroid)
+        if diff > 1e-15:
+            return np.sqrt(diff)
+        else:  # in this case diff should be zero, but sometimes it's an infinitesimal difference
+            return 0
         # from MINAS paper:
         # factor = 1.1
         # return factor*np.std(self.distance_to_centroid(self.instances))
