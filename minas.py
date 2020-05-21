@@ -16,7 +16,7 @@ class Minas(BaseSKMObject, ClassifierMixin):
                  kini=3,
                  cluster_algorithm='kmeans',
                  random_state=0,
-                 min_short_mem_trigger=100,
+                 min_short_mem_trigger=50,
                  min_examples_cluster=10):
         super().__init__()
         self.kini = kini
@@ -181,24 +181,34 @@ class Minas(BaseSKMObject, ClassifierMixin):
     def plot_clusters(self):
         """Simplistic plotting, assumes elements in cluster have two dimensions"""
         points = pd.DataFrame(columns=['x', 'y', 'label'])
-        centroids = pd.DataFrame(columns=['centroid', 'radius'])
+        cluster_info = pd.DataFrame(columns=['label', 'centroid', 'radius'])
         for cluster in self.microclusters:
-            centroids = centroids.append(pd.Series({'centroid': cluster.centroid,
-                                                    'radius': cluster.radius}),
-                                         ignore_index=True)
+            cluster_info = cluster_info.append(pd.Series({'label': cluster.label,
+                                                          'centroid': cluster.centroid,
+                                                          'radius': cluster.radius}),
+                                               ignore_index=True)
             for point in cluster.instances:
                 points = points.append(pd.Series({'x': point[0],
                                                   'y': point[1],
                                                   'label': cluster.label}),  # TODO turn into int
                                        ignore_index=True)
 
-        points.plot.scatter('x', 'y', c='label', colormap='gist_rainbow')
+        color_names = ['k', 'tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple',
+                       'tab:brown', 'tab:pink', 'tab:gray', 'tab:olive', 'tab:cyan']
+        assert len(cluster_info.label.unique()) <= len(color_names)  # limited to these colors for now
+        # colormap to be indexed by label id
+        colormap = pd.DataFrame({'name': color_names}, index=range(-1, len(color_names) - 1))
+        mapped_label_colors = colormap.loc[points['label']].values[:, 0]
+        plt.scatter(points['x'], points['y'], c=mapped_label_colors, s=10, alpha=0.3)
         plt.gca().set_aspect('equal', adjustable='box')  # equal scale for both axes
+
         circles = []
-        for centroid, radius in centroids.values:
-            circles.append(plt.Circle((centroid[0], centroid[1]), radius, color='b', alpha=0.1))
+        for label, centroid, radius in cluster_info.values:
+            circles.append(plt.Circle((centroid[0], centroid[1]), radius,
+                                      color=colormap.loc[label].values[0], alpha=0.1))
         for circle in circles:
             plt.gcf().gca().add_artist(circle)
+
         # self.camera.snap()
         plt.savefig(f'animation/clusters_{self.animation_frame_num:05}.png', dpi=300)
         plt.close()
@@ -209,6 +219,7 @@ class Minas(BaseSKMObject, ClassifierMixin):
         # TODO
         # animation = self.camera.animate()
         # animation.save('animation.mp4')
+
 
 class MicroCluster(object):
 
