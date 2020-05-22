@@ -12,6 +12,8 @@ The `Minas` classifier defines the following methods:
 - `partial_fit` – Incrementally trains the stream model.
 - `predict` – Predicts the target’s value.
 
+You can also run the [Quick-Start jupyter notebook](Quick-Start.ipynb) to follow the steps described below.
+
 ### Train and test a stream classification model using `Minas`
 
 #### 1. Import module
@@ -172,3 +174,45 @@ clf.confusion_matrix(X_test, y_test)
   </tbody>
 </table>
 </div>
+
+#### Putting it all together
+
+```
+from minas import Minas
+from skmultiflow.data.random_rbf_generator import RandomRBFGenerator
+
+# Set up stream
+stream = RandomRBFGenerator(model_random_state=123,
+                            sample_random_state=12,
+                            n_classes=3,
+                            n_features=4,
+                            n_centroids=6)
+stream.prepare_for_use()
+
+# Create classifier
+clf = Minas(kini=10,
+            min_short_mem_trigger=30,
+            min_examples_cluster=10)
+
+# Get stream data
+n_samples = 1000
+offline_size = 500
+
+X_all, y_all = stream.next_sample(n_samples)
+X_train = X_all[:offline_size]
+y_train = y_all[:offline_size]
+X_test = X_all[offline_size:n_samples]
+y_test = y_all[offline_size:n_samples]
+
+# OFFLINE phase
+clf.fit(X_train, y_train)
+
+# ONLINE phase
+y_preds = []
+for X, y in zip(X_test, y_test):
+    y_preds.append(clf.predict([X])[0])
+    clf.partial_fit([X], [y])
+
+# View confusion matrix 
+clf.confusion_matrix(X_test, y_test)
+```
