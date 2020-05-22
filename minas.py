@@ -1,6 +1,4 @@
 import numpy as np
-from time import time
-
 import pandas as pd
 from matplotlib import pyplot as plt
 # from celluloid import Camera
@@ -61,7 +59,7 @@ class Minas(BaseSKMObject, ClassifierMixin):
             self.fit(X, y)
         else:
             y_preds, cluster_preds = self.predict(X, ret_cluster=True)
-            timestamp = time()
+            timestamp = self.sample_counter
             # TODO: remove this ugly loop too
             for point_x, y_pred, cluster in zip(X, y_preds, cluster_preds):
                 if y_pred != -1:  # the model can explain point_x
@@ -72,6 +70,10 @@ class Minas(BaseSKMObject, ClassifierMixin):
                         self.novelty_detect()
             if self.animation:
                 self.plot_clusters()
+
+            # forgetting mechanism
+            if self.sample_counter % self.window_size == 0:
+                self.trigger_forget()
 
         return self
 
@@ -103,7 +105,7 @@ class Minas(BaseSKMObject, ClassifierMixin):
 
         microclusters = []
         # in offline phase, consider all instances arriving at the same time in the microclusters:
-        timestamp = time()
+        timestamp = len(X_train)
         if self.cluster_algorithm == 'kmeans':
             for y_class in np.unique(y_train):
                 # subset with instances from each class
@@ -133,7 +135,7 @@ class Minas(BaseSKMObject, ClassifierMixin):
             for cluster_label in np.unique(cluster_clf.labels_):
                 cluster_instances = X[cluster_clf.labels_ == cluster_label]
                 possible_clusters.append(
-                    MicroCluster(-1, cluster_instances, 0))  # TODO: check later, is timestamp important here?
+                    MicroCluster(-1, cluster_instances, self.sample_counter))
             for cluster in possible_clusters:
                 if cluster.is_cohesive(self.microclusters) and cluster.is_representative(self.min_examples_cluster):
                     closest_cluster = cluster.find_closest_cluster(self.microclusters)
@@ -142,8 +144,20 @@ class Minas(BaseSKMObject, ClassifierMixin):
                     threshold = self.best_threshold(cluster, closest_cluster,
                                                     self.threshold_strategy, self.threshold_factor)
 
+                    # TODO make these ifs elifs cleaner
                     if closest_distance < threshold:  # the new microcluster is an extension
                         cluster.label = closest_cluster.label
+                    elif self.sleep_mem:  # look in the sleep memory, if not empty
+                        closest_cluster = cluster.find_closest_cluster(self.sleep_mem)
+                        closest_distance = cluster.distance_to_centroid(closest_cluster.centroid)
+                        if closest_distance < threshold:  # check again: the new microcluster is an extension
+                            cluster.label = closest_cluster.label
+                            # awake old cluster
+                            self.sleep_mem.remove(closest_cluster)
+                            closest_cluster.timestamp = self.sample_counter
+                            self.microclusters.append(closest_cluster)
+                        else:  # the new microcluster is a novelty pattern
+                            cluster.label = max([cluster.label for cluster in self.microclusters]) + 1
                     else:  # the new microcluster is a novelty pattern
                         cluster.label = max([cluster.label for cluster in self.microclusters]) + 1
 
