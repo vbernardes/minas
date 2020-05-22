@@ -18,6 +18,7 @@ class Minas(BaseSKMObject, ClassifierMixin):
                  min_examples_cluster=10,
                  threshold_strategy=1,
                  threshold_factor=1.1,
+                 window_size=100,
                  update_summary=False,
                  animation=False):
         super().__init__()
@@ -39,8 +40,11 @@ class Minas(BaseSKMObject, ClassifierMixin):
         self.min_examples_cluster = min_examples_cluster
         self.threshold_strategy = threshold_strategy
         self.threshold_factor = threshold_factor
+        self.window_size = window_size
         self.update_summary = update_summary
         self.animation = animation
+
+        self.sample_counter = 0  # to be used with window_size
 
         if self.animation:
             # TODO use Camera
@@ -55,6 +59,7 @@ class Minas(BaseSKMObject, ClassifierMixin):
         return self
 
     def partial_fit(self, X, y, classes=None, sample_weight=None):
+        self.sample_counter += 1
         if self.before_offline_phase:
             self.fit(X, y)
         else:
@@ -192,6 +197,15 @@ class Minas(BaseSKMObject, ClassifierMixin):
 
     def get_clusters_in_class(self, label):
         return [cluster for cluster in self.microclusters if cluster.label == label]
+
+    def trigger_forget(self):
+        for cluster in self.microclusters:
+            if cluster.timestamp < self.sample_counter - self.window_size:
+                self.sleep_mem.append(cluster)
+                self.microclusters.remove(cluster)
+        for instance in self.short_mem:
+            if instance.timestamp < self.sample_counter - self.window_size:
+                self.short_mem.remove(instance)
 
     def plot_clusters(self):
         """Simplistic plotting, assumes elements in cluster have two dimensions"""
