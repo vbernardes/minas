@@ -246,6 +246,9 @@ class Minas(BaseSKMObject, ClassifierMixin):
             plt.gcf().gca().add_artist(circle)
 
         # self.camera.snap()
+        import os
+        if not os.path.exists('animation'):
+            os.makedirs('animation')
         plt.savefig(f'animation/clusters_{self.animation_frame_num:05}.png', dpi=300)
         plt.close()
         self.animation_frame_num += 1
